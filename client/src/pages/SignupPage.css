@@ -1,0 +1,110 @@
+/* ── Signup-specific overrides ──────────────────────────── */
+
+.signup-wrapper {
+  max-width: 480px;
+}
+
+/* ── 2-step progress indicator ──────────────────────────── */
+.signup-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 1.75rem;
+  position: relative;
+  padding: 0 0.5rem;
+}
+
+.signup-step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  position: relative;
+  z-index: 2;
+}
+
+.signup-step:last-child {
+  justify-content: flex-end;
+}
+
+.step-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.04);
+  transition: all 0.35s ease;
+  flex-shrink: 0;
+}
+
+.signup-step.active .step-dot {
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+}
+
+.signup-step span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  transition: color 0.3s;
+  white-space: nowrap;
+}
+
+.signup-step.active span {
+  color: #a5b4fc;
+}
+
+/* connecting line */
+.step-line {
+  position: absolute;
+  top: 50%;
+  left: 38px;
+  height: 2px;
+  background: linear-gradient(90deg, #6366f1, #3b82f6);
+  transition: width 0.5s ease;
+  transform: translateY(-50%);
+  z-index: 1;
+  border-radius: 2px;
+  right: 38px;
+  width: 0%;
+}
+
+/* ── Password strength bar ───────────────────────────────── */
+.strength-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.strength-segment {
+  flex: 1;
+  height: 4px;
+  border-radius: 4px;
+  transition: background 0.3s ease;
+}
+
+/* ── "Sign In" link inside signup footer uses same toggle style */
+.toggle-auth-btn {
+  text-decoration: none;
+  color: #6366f1;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: inline-block;
+}
+
+.toggle-auth-btn:hover {
+  background: rgba(99, 102, 241, 0.1);
+  text-decoration: underline;
+}

@@ -1,0 +1,16 @@
+{
+  "name": "ai-smart-router-planner",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "concurrently -n ml,server,client -c cyan,green,magenta \"npm run dev:ml\" \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:ml": "python ml-model/app.py",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "health:check": "node scripts/health-check.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
