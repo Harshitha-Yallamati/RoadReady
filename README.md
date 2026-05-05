@@ -1,4 +1,4 @@
-# AI Smart Router Planner
+# RoadReady - AI-Powered Smart Route Planner
 
 An intelligent route optimization web app that combines graph algorithms, weighted scoring, ML-based traffic prediction, account-based saved places, and live AI route assistance.
 
