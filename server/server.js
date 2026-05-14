@@ -22,10 +22,23 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 // ── Middleware ──
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
 
@@ -51,7 +64,8 @@ app.get('/api/health', (req, res) => {
     success: true,
     status: 'AI Smart Router Planner API is running 🚀',
     timestamp: new Date().toISOString(),
-    mode: process.env.ORS_API_KEY ? 'live' : 'mock'
+    mode: process.env.ORS_API_KEY ? 'live' : 'mock',
+    mlPredictConfigured: Boolean(process.env.ML_PREDICT_URL)
   });
 });
 

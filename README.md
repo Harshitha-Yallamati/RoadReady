@@ -136,6 +136,118 @@ This checks:
 - Backend: `http://localhost:5000/api/health`
 - ML API: `http://localhost:5001/health`
 
+## Production Deployment
+
+Deploy the three app layers separately, then connect them with environment variables.
+
+| Layer | Platform | Project Root | Build Command | Start/Output |
+|---|---|---|---|---|
+| Frontend | Vercel | `client` | `npm run build` | `dist` |
+| Backend | Render Web Service | `server` | `npm install` | `npm start` |
+| ML API | Render Web Service | `ml-model` | `pip install -r requirements.txt` | `gunicorn app:app` |
+| Database | MongoDB Atlas | n/a | n/a | connection string |
+
+### 1) Deploy MongoDB Atlas
+
+Create an Atlas cluster and copy the connection string. Use it as the backend `MONGO_URI`.
+
+### 2) Deploy the ML API on Render
+
+Create a Render Web Service with:
+
+```text
+Root Directory: ml-model
+Runtime: Python
+Build Command: pip install -r requirements.txt
+Start Command: gunicorn app:app
+Health Check Path: /health
+```
+
+After deploy, copy the ML service URL, for example:
+
+```text
+https://your-ml-api.onrender.com
+```
+
+The backend will use:
+
+```env
+ML_PREDICT_URL=https://your-ml-api.onrender.com/predict
+```
+
+### 3) Deploy the Backend on Render
+
+Create a separate Render Web Service with:
+
+```text
+Root Directory: server
+Runtime: Node
+Build Command: npm install
+Start Command: npm start
+Health Check Path: /api/health
+```
+
+Set these required environment variables:
+
+```env
+NODE_ENV=production
+CLIENT_URL=https://your-frontend.vercel.app
+MONGO_URI=mongodb+srv://...
+JWT_SECRET=replace_with_a_long_random_secret
+JWT_EXPIRES_IN=7d
+ML_PREDICT_URL=https://your-ml-api.onrender.com/predict
+```
+
+Also set any live feature keys you use: `ORS_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `WEATHER_API_KEY`, `SERP_API_KEY`, `MAPILLARY_TOKEN`, and SMTP settings.
+
+After deploy, copy the backend URL, for example:
+
+```text
+https://your-backend.onrender.com
+```
+
+### 4) Deploy the Frontend on Vercel
+
+Import the repo in Vercel and configure:
+
+```text
+Root Directory: client
+Framework Preset: Vite
+Build Command: npm run build
+Output Directory: dist
+```
+
+Set:
+
+```env
+VITE_API_BASE_URL=https://your-backend.onrender.com/api
+```
+
+After Vercel gives you the production URL, return to the backend Render service and set:
+
+```env
+CLIENT_URL=https://your-frontend.vercel.app
+```
+
+Redeploy the backend after changing `CLIENT_URL`.
+
+### URL Wiring Summary
+
+```text
+Frontend on Vercel
+  VITE_API_BASE_URL -> https://your-backend.onrender.com/api
+
+Backend on Render
+  CLIENT_URL -> https://your-frontend.vercel.app
+  ML_PREDICT_URL -> https://your-ml-api.onrender.com/predict
+  MONGO_URI -> MongoDB Atlas connection string
+
+ML API on Render
+  Exposes /health and /predict
+```
+
+You can also use the included `render.yaml` blueprint to create both Render services, then fill in the secret environment variables in the Render dashboard.
+
 ## API Endpoints (Backend)
 
 | Method | Endpoint | Description |

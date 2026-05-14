@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { clearAuthSession, getStoredToken } from '../utils/authStorage';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 const AUTH_FREE_PATHS = [
   '/auth/login',
   '/auth/register',
