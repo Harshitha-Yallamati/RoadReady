@@ -1,0 +1,107 @@
+name: CI — RoadReady
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Backend ──────────────────────────────────────────────
+  backend:
+    name: Backend (Node.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - run: npm ci
+
+      - name: Verify server module loads
+        run: node -e "import('./server.js').then(() => { console.log('✅ Server module OK'); process.exit(0); }).catch(e => { console.error('❌', e.message); process.exit(1); })"
+        env:
+          NODE_ENV: test
+
+  # ── Frontend ─────────────────────────────────────────────
+  frontend:
+    name: Frontend (Vite + React)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: https://roadready-backend.onrender.com/api
+
+      - name: Verify dist output exists
+        run: |
+          if [ ! -f dist/index.html ]; then
+            echo "❌ dist/index.html not found"
+            exit 1
+          fi
+          echo "✅ Build output verified"
+
+  # ── ML Service ───────────────────────────────────────────
+  ml-service:
+    name: ML Service (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml-model
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ml-model/requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - name: Verify Flask app imports
+        run: python -c "from app import app; print('✅ Flask app OK')"
+
+      - name: Verify health endpoint
+        run: |
+          python -c "
+          from app import app
+          client = app.test_client()
+          resp = client.get('/health')
+          assert resp.status_code == 200, f'Health check failed: {resp.status_code}'
+          data = resp.get_json()
+          assert data['status'] == 'ok', f'Unexpected status: {data}'
+          print('✅ Health endpoint OK')
+          "
+
+      - name: Verify predict endpoint
+        run: |
+          python -c "
+          from app import app
+          client = app.test_client()
+          resp = client.post('/predict', json={'time': '08:00', 'day': 'monday'})
+          assert resp.status_code == 200, f'Predict failed: {resp.status_code}'
+          data = resp.get_json()
+          assert 'score' in data and 'level' in data, f'Unexpected shape: {data}'
+          print(f'✅ Predict endpoint OK — level={data[\"level\"]}, score={data[\"score\"]}')
+          "
