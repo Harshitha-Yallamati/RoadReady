@@ -22,7 +22,10 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+const allowedOrigins = (
+  process.env.CLIENT_URL ||
+  'http://localhost:5173,https://roadready-sigma.vercel.app'
+)
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
