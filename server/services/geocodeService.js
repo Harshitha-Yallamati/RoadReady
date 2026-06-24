@@ -12,16 +12,22 @@ import axios from 'axios';
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org';
 const PHOTON_URL = 'https://photon.komoot.io/api';
 
-const FSQ_API_KEY = process.env.FSQ_API_KEY;
+const INDIA_COUNTRY_CODE = 'in';
+const INDIA_BOUNDS = {
+  minLat: 6,
+  maxLat: 38,
+  minLon: 68,
+  maxLon: 98,
+};
 const LOCAL_FALLBACK_PLACES = [
   { name: 'Guntur, Andhra Pradesh, India', lat: 16.3067, lon: 80.4365, aliases: ['guntur'] },
-  { name: 'Vijayawada, Andhra Pradesh, India', lat: 16.5062, lon: 80.648, aliases: ['vijayawada'] },
+  { name: 'Vijayawada, Andhra Pradesh, India', lat: 16.5062, lon: 80.648, aliases: ['vijayawada', 'vija', 'vijay'] },
   { name: 'Amaravati, Andhra Pradesh, India', lat: 16.5417, lon: 80.5167, aliases: ['amaravati'] },
   { name: 'Visakhapatnam, Andhra Pradesh, India', lat: 17.6868, lon: 83.2185, aliases: ['vizag', 'visakhapatnam'] },
-  { name: 'Hyderabad, Telangana, India', lat: 17.385, lon: 78.4867, aliases: ['hyderabad'] },
+  { name: 'Hyderabad, Telangana, India', lat: 17.385, lon: 78.4867, aliases: ['hyderabad', 'hyd'] },
   { name: 'Warangal, Telangana, India', lat: 17.9689, lon: 79.5941, aliases: ['warangal'] },
   { name: 'Bengaluru, Karnataka, India', lat: 12.9716, lon: 77.5946, aliases: ['bangalore', 'bengaluru'] },
-  { name: 'Chennai, Tamil Nadu, India', lat: 13.0827, lon: 80.2707, aliases: ['chennai'] },
+  { name: 'Chennai, Tamil Nadu, India', lat: 13.0827, lon: 80.2707, aliases: ['chennai', 'chen'] },
   { name: 'Mumbai, Maharashtra, India', lat: 19.076, lon: 72.8777, aliases: ['mumbai', 'bombay'] },
   { name: 'Pune, Maharashtra, India', lat: 18.5204, lon: 73.8567, aliases: ['pune'] },
   { name: 'Delhi, India', lat: 28.6139, lon: 77.209, aliases: ['delhi', 'new delhi'] },
@@ -45,11 +51,15 @@ const LOCAL_FALLBACK_PLACES = [
  * @returns {Array} - Array of { name, lat, lon }
  */
 export async function geocode(query, lat = null, lon = null) {
+  const localResults = geocodeLocalFallback(query, lat, lon);
+
   // If Foursquare key is available, attempt Foursquare first.
-  if (FSQ_API_KEY && FSQ_API_KEY.length > 5 && !query.includes(',')) {
+  const fsqApiKey = getFsqApiKey();
+  if (fsqApiKey && fsqApiKey.length > 5 && !query.includes(',')) {
     try {
-      const fsqResults = await geocodeFoursquare(query, lat, lon);
-      if (fsqResults && fsqResults.length > 0) return fsqResults;
+      const fsqResults = await geocodeFoursquare(query, lat, lon, fsqApiKey);
+      const rankedFsq = rankGeocodeResults(query, [...localResults, ...fsqResults], lat, lon);
+      if (rankedFsq.length > 0) return rankedFsq.slice(0, 8);
     } catch (err) {
       console.warn('Foursquare API failed or key invalid, falling back to OS/Photon:', err.message);
     }
@@ -64,27 +74,18 @@ export async function geocode(query, lat = null, lon = null) {
   const nom = nominatimResults.status === 'fulfilled' ? nominatimResults.value : [];
   const phot = photonResults.status === 'fulfilled' ? photonResults.value : [];
 
-  // Merge: Nominatim first (more accurate), Photon second (fuzzier matches)
-  const merged = [...nom];
-  const seen = new Set(nom.map(r => `${r.lat.toFixed(3)}_${r.lon.toFixed(3)}`));
-  
-  for (const r of phot) {
-    const key = `${r.lat.toFixed(3)}_${r.lon.toFixed(3)}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      merged.push(r);
-    }
-  }
-
-  const primaryResults = merged.slice(0, 8);
+  const primaryResults = rankGeocodeResults(query, [...localResults, ...nom, ...phot], lat, lon).slice(0, 8);
   if (primaryResults.length > 0) return primaryResults;
 
   // Offline-safe fallback for common places when external providers fail.
-  const localResults = geocodeLocalFallback(query, lat, lon);
   if (localResults.length > 0) {
     console.warn(`Geocode fallback hit for query "${query}"`);
   }
   return localResults;
+}
+
+function getFsqApiKey() {
+  return process.env.FSQ_API_KEY || '';
 }
 
 function normalizeText(value) {
@@ -105,6 +106,93 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   const a = Math.sin(dLat / 2) ** 2 +
     Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function hasCoords(lat, lon) {
+  return Number.isFinite(Number(lat)) && Number.isFinite(Number(lon));
+}
+
+function isWithinIndia(lat, lon) {
+  const parsedLat = Number(lat);
+  const parsedLon = Number(lon);
+  return Number.isFinite(parsedLat) &&
+    Number.isFinite(parsedLon) &&
+    parsedLat >= INDIA_BOUNDS.minLat &&
+    parsedLat <= INDIA_BOUNDS.maxLat &&
+    parsedLon >= INDIA_BOUNDS.minLon &&
+    parsedLon <= INDIA_BOUNDS.maxLon;
+}
+
+function isIndianResult(result) {
+  const countryCode = normalizeText(result.countryCode || result.countrycode);
+  if (countryCode === INDIA_COUNTRY_CODE) return true;
+  if (normalizeText(result.fullName || result.name).includes('india')) return true;
+  return isWithinIndia(result.lat, result.lon);
+}
+
+function textMatchScore(query, result) {
+  const q = normalizeText(query);
+  const name = normalizeText(result.name);
+  const fullName = normalizeText(result.fullName);
+  const aliases = Array.isArray(result.aliases) ? result.aliases.map(normalizeText) : [];
+  const terms = [name, fullName, ...aliases].filter(Boolean);
+
+  if (!q) return 0;
+  if (terms.some((term) => term === q)) return 190;
+  if (aliases.some((alias) => alias === q)) return 185;
+  if (terms.some((term) => term.startsWith(q))) return 120;
+  if (terms.some((term) => term.split(/[\s,-]+/).some((part) => part.startsWith(q)))) return 85;
+  if (terms.some((term) => term.includes(q))) return 50;
+  return 0;
+}
+
+function typeScore(type = '') {
+  const normalized = normalizeText(type);
+  if (['city', 'town', 'municipality'].includes(normalized)) return 48;
+  if (['administrative', 'village', 'suburb', 'locality'].includes(normalized)) return 24;
+  if (['station', 'aerodrome', 'airport'].includes(normalized)) return 14;
+  if (['restaurant', 'books', 'company', 'farmland', 'fixme', 'yes'].includes(normalized)) return -20;
+  return 0;
+}
+
+function rankGeocodeResults(query, results, lat = null, lon = null) {
+  const preferIndia = !hasCoords(lat, lon) || isWithinIndia(lat, lon);
+  const ranked = [];
+
+  for (const result of results) {
+    if (!result || !hasCoords(result.lat, result.lon)) continue;
+
+    const matchScore = textMatchScore(query, result);
+    const indian = isIndianResult(result);
+    const importance = Number(result.importance) || 0;
+    let score = matchScore + typeScore(result.type) + Math.min(importance * 100, 60);
+
+    if (result.type === 'local-fallback') score += 130;
+    if (preferIndia && indian) score += 90;
+    if (preferIndia && !indian) score -= 140;
+
+    if (hasCoords(lat, lon)) {
+      const distanceKm = haversineKm(Number(lat), Number(lon), Number(result.lat), Number(result.lon));
+      score += Math.max(0, 45 - distanceKm / 12);
+    }
+
+    ranked.push({
+      ...result,
+      _rankScore: score,
+    });
+  }
+
+  ranked.sort((a, b) => b._rankScore - a._rankScore);
+
+  const seen = new Set();
+  return ranked
+    .filter((result) => {
+      const key = `${Number(result.lat).toFixed(3)}_${Number(result.lon).toFixed(3)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map(({ _rankScore, aliases, ...result }) => result);
 }
 
 function geocodeLocalFallback(query, lat = null, lon = null) {
@@ -136,9 +224,11 @@ function geocodeLocalFallback(query, lat = null, lon = null) {
   return ranked.map((p) => ({
     name: p.name.split(',').slice(0, 2).join(',').trim(),
     fullName: p.name,
+    aliases: p.aliases || [],
     lat: p.lat,
     lon: p.lon,
     type: 'local-fallback',
+    countryCode: INDIA_COUNTRY_CODE,
     importance: 0,
   }));
 }
@@ -161,13 +251,13 @@ function nearestFallbackPlace(lat, lon, maxDistanceKm = 25) {
 /**
  * Foursquare Places API (Industry-standard POI search)
  */
-async function geocodeFoursquare(query, lat, lon) {
+async function geocodeFoursquare(query, lat, lon, apiKey) {
   try {
     const params = { query, limit: 8 };
     if (lat && lon) params.ll = `${lat},${lon}`;
     
     const res = await axios.get('https://api.foursquare.com/v3/places/search', {
-      headers: { Authorization: FSQ_API_KEY, Accept: 'application/json' },
+      headers: { Authorization: apiKey, Accept: 'application/json' },
       params,
       timeout: 5000,
     });
@@ -179,6 +269,7 @@ async function geocodeFoursquare(query, lat, lon) {
         lat: p.geocodes?.main?.latitude,
         lon: p.geocodes?.main?.longitude,
         type: p.categories?.[0]?.name || 'Place',
+        countryCode: p.location?.country || '',
         importance: 1, // High importance for explicit POI answers
       })).filter(p => p.lat && p.lon);
     }
@@ -199,10 +290,10 @@ async function geocodeNominatim(query, lat, lon) {
       limit: 6,
       addressdetails: 1,
       'accept-language': 'en',
+      countrycodes: INDIA_COUNTRY_CODE,
     };
     if (lat && lon) {
-      params.viewbox = `${lon-0.1},${lat+0.1},${lon+0.1},${lat-0.1}`;
-      params.bounded = 1;
+      params.viewbox = `${Number(lon) - 3},${Number(lat) + 3},${Number(lon) + 3},${Number(lat) - 3}`;
     }
     const res = await axios.get(`${NOMINATIM_URL}/search`, {
       params,
@@ -219,6 +310,7 @@ async function geocodeNominatim(query, lat, lon) {
         lat: parseFloat(item.lat),
         lon: parseFloat(item.lon),
         type: item.type,
+        countryCode: item.address?.country_code || '',
         importance: item.importance || 0,
       }));
     }
@@ -275,6 +367,7 @@ async function geocodePhoton(query, lat, lon) {
           lat: coords[1],
           lon: coords[0],
           type: props.osm_value || props.type || '',
+          countryCode: props.countrycode || '',
           importance: 0,
         };
       });

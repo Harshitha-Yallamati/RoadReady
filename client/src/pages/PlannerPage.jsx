@@ -14,7 +14,7 @@ import { useAIChat } from '../context/AIChatContext';
 /* ══════════════════════════════════════════════
    Location Input Component
    ══════════════════════════════════════════════ */
-function LocationInput({ placeholder, value, onChange, onClear, color = 'var(--blue)', onLocateMe }) {
+function LocationInput({ placeholder, value, onChange, onClear, color = 'var(--blue)', onLocateMe, biasLocation = null }) {
   const [query, setQuery] = useState(value?.name || '');
   const [suggestions, setSuggestions] = useState([]);
   const [show, setShow] = useState(false);
@@ -37,7 +37,7 @@ function LocationInput({ placeholder, value, onChange, onClear, color = 'var(--b
       setLoading(true);
       timer.current = setTimeout(async () => {
         try {
-          const res = await geocodePlace(v);
+          const res = await geocodePlace(v, biasLocation?.lat, biasLocation?.lon);
           setSuggestions(res.data.results || []);
           setShow(true);
         } catch { setSuggestions([]); }
@@ -571,6 +571,7 @@ export default function PlannerPage() {
                     <LocationInput placeholder="Start location..." value={state.source}
                       onChange={(v) => dispatch({ type: 'SET_SOURCE', payload: v })}
                       onClear={() => dispatch({ type: 'SET_SOURCE', payload: null })}
+                      biasLocation={userLocation || state.destination}
                       color="#34a853" onLocateMe={handleLocateMe} />
 
                     {stops.map((stop, i) => (
@@ -578,6 +579,7 @@ export default function PlannerPage() {
                         <div style={{ flex: 1 }}>
                           <LocationInput placeholder={`Stop ${i + 1}...`} value={stop.lat ? stop : null} color="#fbbc04"
                             onChange={(v) => { const ns = [...stops]; ns[i] = v || { name: '', lat: null, lon: null }; setStops(ns); }}
+                            biasLocation={userLocation || state.source || state.destination}
                             onClear={() => setStops(stops.filter((_, j) => j !== i))} />
                         </div>
                       </div>
@@ -586,6 +588,7 @@ export default function PlannerPage() {
                     <LocationInput placeholder="Destination..." value={state.destination}
                       onChange={(v) => dispatch({ type: 'SET_DESTINATION', payload: v })}
                       onClear={() => dispatch({ type: 'SET_DESTINATION', payload: null })}
+                      biasLocation={userLocation || state.source}
                       color="#ea4335" />
                   </div>
 
