@@ -16,6 +16,9 @@ export default function AISuggestionsPage() {
     trafficScore: currentRoute?.trafficScore || 0,
     weather: state.weather,
     allRoutes: state.routes,
+    preference: state.preference,
+    routeExplanation: state.explanation,
+    algorithmComparison: state.algorithmComparison,
   });
 
   return (

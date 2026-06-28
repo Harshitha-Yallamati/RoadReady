@@ -124,6 +124,7 @@ function DirectionStep({ step, idx, isLast }) {
    ══════════════════════════════════════════════ */
 function AIAssistantPanelWrapper({
   source, destination, currentRoute, navigating, weather, allRoutes,
+  preference, routeExplanation, algorithmComparison, stops, multiStopResult,
   latestSwitchSuggestion, onAcceptSwitch, onDismissSwitch,
   variant = 'grid',
 }) {
@@ -137,6 +138,11 @@ function AIAssistantPanelWrapper({
     weather,
     switchSuggestion: latestSwitchSuggestion,
     allRoutes,
+    preference,
+    routeExplanation,
+    algorithmComparison,
+    stops,
+    multiStopResult,
   });
 
   const handleAccept = useCallback(() => {
@@ -554,6 +560,11 @@ export default function PlannerPage() {
                 navigating={navigating}
                 weather={state.weather}
                 allRoutes={state.routes}
+                preference={state.preference}
+                routeExplanation={state.explanation}
+                algorithmComparison={state.algorithmComparison}
+                stops={stops.filter(s => s.lat)}
+                multiStopResult={multiResult}
                 latestSwitchSuggestion={latestSwitchSuggestion}
                 variant="compact"
                 onAcceptSwitch={handleAssistantAccept}
@@ -987,6 +998,11 @@ export default function PlannerPage() {
               navigating={navigating}
               weather={state.weather}
               allRoutes={state.routes}
+              preference={state.preference}
+              routeExplanation={state.explanation}
+              algorithmComparison={state.algorithmComparison}
+              stops={stops.filter(s => s.lat)}
+              multiStopResult={multiResult}
               latestSwitchSuggestion={latestSwitchSuggestion}
               variant="grid"
               onAcceptSwitch={handleAssistantAccept}

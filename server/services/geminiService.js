@@ -48,8 +48,18 @@ function formatDelay(seconds = 0) {
   return `${Math.max(1, Math.round(value / 60))} min`;
 }
 
+function formatCost(cost) {
+  const value = Number(cost);
+  if (!Number.isFinite(value) || value <= 0) return 'unknown cost';
+  return `INR ${Math.round(value)}`;
+}
+
 function formatPlace(place = {}, fallback = 'Unknown') {
   return place?.name || fallback;
+}
+
+function getRouteCost(route = {}) {
+  return route.estimatedCost ?? route.cost ?? route.fare ?? null;
 }
 
 function summarizeRoutes(currentRoute, allRoutes = []) {
@@ -63,10 +73,104 @@ function summarizeRoutes(currentRoute, allRoutes = []) {
     const label = route.summary || `Route ${index + 1}`;
     const duration = formatDuration(route.adjustedDuration || route.duration);
     const distance = formatDistance(route.distance);
+    const cost = formatCost(getRouteCost(route));
     const trafficLevel = route.trafficLevel || 'unknown';
     const trafficDelay = route.trafficDelay ? `, delay ${formatDelay(route.trafficDelay)}` : '';
-    return `${label}: ${distance}, ${duration}, traffic ${trafficLevel}${trafficDelay}`;
+    const score = Number.isFinite(Number(route.score)) ? `, score ${route.score}` : '';
+    const best = route.isBest ? ', marked best' : '';
+    return `${label}: ${distance}, ${duration}, cost ${cost}, traffic ${trafficLevel}${trafficDelay}${score}${best}`;
   });
+}
+
+function summarizeBestCostRoute(currentRoute, allRoutes = []) {
+  const candidates = Array.isArray(allRoutes) && allRoutes.length > 0
+    ? allRoutes
+    : currentRoute
+      ? [currentRoute]
+      : [];
+
+  const withCost = candidates
+    .map((route, index) => ({ route, index, cost: Number(getRouteCost(route)) }))
+    .filter((item) => Number.isFinite(item.cost) && item.cost > 0)
+    .sort((a, b) => a.cost - b.cost);
+
+  if (withCost.length === 0) return null;
+
+  const best = withCost[0];
+  const label = best.route.summary || `Route ${best.index + 1}`;
+  return `Lowest estimated cost: ${formatCost(best.cost)} on ${label}`;
+}
+
+function summarizeStops(stops = []) {
+  if (!Array.isArray(stops) || stops.length === 0) return null;
+  const names = stops
+    .filter(Boolean)
+    .map((stop, index) => stop.name || `Stop ${index + 1}`)
+    .slice(0, 8);
+  return names.length > 0 ? `Planned stops: ${names.join(' -> ')}` : null;
+}
+
+function summarizeRouteExplanation(explanation) {
+  if (!explanation) return null;
+  if (typeof explanation === 'string') return explanation;
+  return explanation.summary || null;
+}
+
+function summarizeAlgorithmComparison(comparison) {
+  if (!comparison) return null;
+
+  if (Array.isArray(comparison) && comparison.length > 0) {
+    return comparison.slice(0, 2).map((item) => {
+      const routeLabel = `Route ${Number(item.routeIndex ?? 0) + 1}`;
+      const dijkstra = item.dijkstra ? `Dijkstra cost ${item.dijkstra.cost}, nodes ${item.dijkstra.nodesVisited}` : null;
+      const astar = item.astar ? `A* cost ${item.astar.cost}, nodes ${item.astar.nodesVisited}, improvement ${item.astar.improvement}%` : null;
+      return [routeLabel, dijkstra, astar].filter(Boolean).join(': ');
+    }).join(' | ');
+  }
+
+  if (typeof comparison === 'object') {
+    return Object.entries(comparison)
+      .filter(([, value]) => value && Number.isFinite(Number(value.distance)))
+      .map(([name, value]) => `${name}: ${formatDistance(value.distance)}, ${formatDuration(value.duration)}`)
+      .join(' | ') || null;
+  }
+
+  return null;
+}
+
+function summarizeMultiStopResult(result = {}) {
+  if (!result || typeof result !== 'object') return null;
+
+  const parts = [];
+  if (Number.isFinite(Number(result.totalDistance))) {
+    parts.push(`optimized total ${formatDistance(result.totalDistance)}`);
+  }
+  if (Number.isFinite(Number(result.totalDuration))) {
+    parts.push(`ETA ${formatDuration(result.totalDuration)}`);
+  }
+  if (Number.isFinite(Number(result.distanceSaved)) && Number(result.distanceSaved) > 0) {
+    parts.push(`saved ${formatDistance(result.distanceSaved)}`);
+  }
+  if (Number.isFinite(Number(result.timeSaved)) && Number(result.timeSaved) > 0) {
+    parts.push(`saved ${formatDuration(result.timeSaved)}`);
+  }
+  if (result.method) {
+    parts.push(`method ${result.method}`);
+  }
+
+  const sequence = Array.isArray(result.optimizedSequence)
+    ? result.optimizedSequence.map((stop, index) => stop.name || `Stop ${index + 1}`).slice(0, 10)
+    : [];
+
+  const comparison = summarizeAlgorithmComparison(result.algorithmComparison);
+  const explanation = summarizeRouteExplanation(result.explanation);
+
+  return [
+    parts.length > 0 ? `Multi-stop optimization: ${parts.join(', ')}` : null,
+    sequence.length > 0 ? `Optimized stop order: ${sequence.join(' -> ')}` : null,
+    comparison ? `Multi-stop algorithm comparison: ${comparison}` : null,
+    explanation ? `Multi-stop explanation: ${explanation}` : null,
+  ].filter(Boolean).join('\n') || null;
 }
 
 function buildContextSummary(context = {}) {
@@ -75,6 +179,7 @@ function buildContextSummary(context = {}) {
   const currentRoute = context.currentRoute || null;
   const duration = formatDuration(context.totalDurationSeconds || currentRoute?.adjustedDuration || currentRoute?.duration);
   const distance = formatDistance(context.totalDistanceMeters || currentRoute?.distance);
+  const cost = formatCost(getRouteCost(currentRoute));
   const trafficLevel = context.trafficLevel || currentRoute?.trafficLevel || 'unknown';
   const trafficScore = Number(context.trafficScore ?? currentRoute?.trafficScore ?? 0);
   const trafficDelay = formatDelay(currentRoute?.trafficDelay || context.trafficDelaySeconds || 0);
@@ -82,13 +187,24 @@ function buildContextSummary(context = {}) {
     ? `${context.weather.condition || 'Unknown'}, ${context.weather.temperature ?? '--'} C`
     : 'unknown';
   const routes = summarizeRoutes(currentRoute, context.allRoutes || []);
+  const bestCostRoute = summarizeBestCostRoute(currentRoute, context.allRoutes || []);
+  const stopsSummary = summarizeStops(context.stops);
+  const routeExplanation = summarizeRouteExplanation(context.routeExplanation || context.explanation);
+  const algorithmComparison = summarizeAlgorithmComparison(context.algorithmComparison);
+  const multiStopSummary = summarizeMultiStopResult(context.multiStopResult);
 
   return [
     `Trip: ${source} -> ${destination}`,
-    `Current route: distance ${distance}, ETA ${duration}`,
+    context.preference ? `Routing preference: ${context.preference}` : null,
+    `Current route: distance ${distance}, ETA ${duration}, estimated cost ${cost}`,
     `Traffic: level ${trafficLevel}, score ${trafficScore}/100, delay ${trafficDelay}`,
     `Weather near destination: ${weather}`,
+    bestCostRoute,
     routes.length > 0 ? `Alternatives: ${routes.join(' | ')}` : null,
+    stopsSummary,
+    routeExplanation ? `Optimization explanation: ${routeExplanation}` : null,
+    algorithmComparison ? `Algorithm comparison: ${algorithmComparison}` : null,
+    multiStopSummary,
     context.latestSearchSummary ? `Search notes: ${context.latestSearchSummary}` : null,
   ].filter(Boolean).join('\n');
 }
